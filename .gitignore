@@ -61,6 +61,7 @@ coverage.xml
 # mypy
 .mypy_cache/
 .dmypy.json
+temp_auto_push.bat
 dmypy.json
 
 # ruff
@@ -89,7 +90,6 @@ Temporary Items
 .apdisk
 
 # IDE / Editors
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -125,3 +125,5 @@ CLAUDE_PERSONAL.md
 tasks/
 app/memories
 .aider*
+.gitignore
+branch_structure.json
