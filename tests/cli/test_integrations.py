@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
@@ -108,6 +108,23 @@ def test_integrations_setup_skips_auto_verify_for_unverifiable_service() -> None
     mock_verify.assert_not_called()
 
 
+def test_setup_ms_teams_saves_credentials(monkeypatch) -> None:
+    webhook_url = "https://prod-01.westus.logic.azure.com/workflows/test"
+
+    saved: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr("app.integrations.cli._p", lambda _l, **_k: webhook_url)
+    monkeypatch.setattr(
+        "app.integrations.cli.upsert_integration",
+        lambda service, entry: saved.append((service, entry)),
+    )
+
+    from app.integrations.cli import _setup_ms_teams
+
+    _setup_ms_teams()
+
+    assert saved == [("ms_teams", {"credentials": {"webhook_url": webhook_url}})]
+
+
 def test_integrations_verify_accepts_github() -> None:
     runner = CliRunner()
 
@@ -121,6 +138,7 @@ def test_integrations_verify_accepts_github() -> None:
     mock_verify.assert_called_once_with(
         "github",
         send_slack_test=False,
+        send_teams_test=False,
     )
     mock_capture.assert_called_once_with("github")
 
@@ -138,5 +156,46 @@ def test_integrations_verify_accepts_openclaw() -> None:
     mock_verify.assert_called_once_with(
         "openclaw",
         send_slack_test=False,
+        send_teams_test=False,
     )
     mock_capture.assert_called_once_with("openclaw")
+
+
+def test_integrations_verify_accepts_ms_teams() -> None:
+    runner = CliRunner()
+
+    with (
+        patch("app.cli.commands.integrations.capture_integration_verified") as mock_capture,
+        patch("app.integrations.cli.cmd_verify", return_value=0) as mock_verify,
+    ):
+        result = runner.invoke(cli, ["integrations", "verify", "ms_teams", "--send-teams-test"])
+
+    assert result.exit_code == 0
+    mock_verify.assert_called_once_with(
+        "ms_teams",
+        send_slack_test=False,
+        send_teams_test=True,
+    )
+    mock_capture.assert_called_once_with("ms_teams")
+
+
+def test_verify_ms_teams_handler_sends_adaptive_card() -> None:
+    from app.integrations.verify import _verify_ms_teams
+
+    webhook_url = "https://default123.environment.api.powerplatform.com/powerautomate/test"
+    config = {"webhook_url": webhook_url}
+
+    with patch("httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        mock_post.return_value.raise_for_status.return_value = None
+
+        result = _verify_ms_teams(source="env", config=config, send_teams_test=True)
+
+    assert result["status"] == "passed"
+    # Check that the payload contains the Adaptive Card structure
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["type"] == "message"
+    assert (
+        kwargs["json"]["attachments"][0]["contentType"]
+        == "application/vnd.microsoft.card.adaptive"
+    )
